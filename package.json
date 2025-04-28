@@ -13,6 +13,8 @@
     "axios": "^1.8.4",
     "cheerio": "^1.0.0",
     "firebase": "^11.6.1",
+    "googleapis": "^148.0.0",
+    "jsonwebtoken": "^9.0.2",
     "next": "15.3.0",
     "next-auth": "^4.24.11",
     "puppeteer": "^24.6.1",
