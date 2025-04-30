@@ -1,56 +1,40 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession, signIn } from 'next-auth/react';
-import Link from 'next/link';
 import { signOutFromAll } from '@/lib/firebaseAuth';
+import JiraBoard from '@/components/JiraBoard';
+import GoalTracker from '@/components/GoalTracker';
+import ChatInterface from '@/components/ChatInterface';
+import { VerticalNavigation } from '@/components/VerticalNavigation';
 
 export default function Home() {
-  const [message, setMessage] = useState('');
+  // State for chat functionality
   const [chatHistory, setChatHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  
+  // State variables for tasks, events, and goals
   const [tasks, setTasks] = useState([]);
   const [events, setEvents] = useState([]);
-  const [reminders, setReminders] = useState([]);
+  const [goals, setGoals] = useState([]);
+  
+  // UI state
   const [activeTab, setActiveTab] = useState('chat');
+  
+  // Authentication state
   const { data: session, status } = useSession();
   const router = useRouter();
-  const messagesEndRef = useRef(null);
-
-  // Scroll to bottom of chat when new messages are added
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [chatHistory]);
-
-  // Redirect to sign-in if not authenticated, but give time for session restoration
-  useEffect(() => {
-    // Create a flag to track if we're in the process of redirecting
-    let redirecting = false;
-    
-    // Only redirect if we're definitely not authenticated after a delay
-    // This gives time for the session restoration process to complete
-    const redirectTimer = setTimeout(() => {
-      if (status === 'unauthenticated' && !redirecting) {
-        console.log('Session not restored after delay, redirecting to sign-in');
-        redirecting = true;
-        router.push('/auth/signin');
-      }
-    }, 2000); // 2 second delay before redirecting
-    
-    // Clear the timeout if the status changes or component unmounts
-    return () => clearTimeout(redirectTimer);
-  }, [status, router]);
 
   // Fetch user data on component mount if authenticated
   useEffect(() => {
     if (session && session.user) {
       fetchTasks();
       fetchEvents();
-      fetchReminders();
+      fetchGoals();
+      
+      console.log('Fetching tasks, events, and goals');
     }
   }, [session]);
 
@@ -62,6 +46,7 @@ export default function Home() {
       
       if (data.success) {
         setTasks(data.data);
+        console.log('Tasks loaded:', data.data.length);
       } else {
         console.error('Failed to load tasks');
       }
@@ -87,109 +72,24 @@ export default function Home() {
   };
 
   // Fetch reminders from API
-  const fetchReminders = async () => {
+  // Fetch goals from API
+  const fetchGoals = async () => {
     try {
-      const response = await fetch('/api/reminders');
+      const response = await fetch('/api/goals');
       const data = await response.json();
       
       if (data.success) {
-        setReminders(data.data);
+        setGoals(data.data);
+        console.log('Goals loaded:', data.data.length);
       } else {
-        console.error('Failed to load reminders');
+        console.error('Failed to load goals');
       }
     } catch (err) {
-      console.error('Error loading reminders:', err);
+      console.error('Error loading goals:', err);
     }
   };
 
-  // Handle sending a message to the AI assistant
-  const sendMessage = async (e) => {
-    e.preventDefault();
-    
-    if (!message.trim()) {
-      console.log('Empty message, not sending');
-      return;
-    }
-    
-    console.log('Sending message to assistant:', message.trim());
-    
-    // Add user message to chat history
-    const userMessage = { role: 'user', content: message };
-    setChatHistory(prev => [...prev, userMessage]);
-    
-    setLoading(true);
-    setError(null);
-    const messageToSend = message.trim(); // Store before clearing input
-    setMessage('');
-    
-    try {
-      // Make sure we have session and user ID
-      if (!session || !session.user || !session.user.id) {
-        console.error('No valid session found:', session);
-        throw new Error('You must be signed in to use the assistant');
-      }
-      
-      console.log('Session data:', {
-        id: session.user.id,
-        email: session.user.email,
-        hasAccessToken: !!session.accessToken,
-        hasUserAccessToken: !!session.user.accessToken
-      });
-      
-      // Get access token from session
-      const accessToken = session.accessToken || session.user.accessToken;
-      console.log('Access token available:', !!accessToken);
-      
-      // Headers with authorization if we have a token
-      const headers = {
-        'Content-Type': 'application/json',
-      };
-      
-      if (accessToken) {
-        headers['Authorization'] = `Bearer ${accessToken}`;
-        console.log('Added Authorization header');
-      }
-      
-      // Prepare request body
-      const requestBody = {
-        message: messageToSend,
-        userId: session.user.id
-      };
-      
-      console.log('Sending request with body:', JSON.stringify(requestBody));
-      console.log('Headers:', JSON.stringify(headers));
-      
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(requestBody),
-      });
-      
-      console.log('Response status:', response.status);
-      const data = await response.json();
-      console.log('Response data:', data);
-      
-      if (data.success) {
-        console.log('Successfully received assistant response');
-        // Add assistant response to chat history
-        const assistantMessage = { role: 'assistant', content: data.data.content };
-        setChatHistory(prev => [...prev, assistantMessage]);
-        
-        // Refresh data after AI might have updated it
-        fetchTasks();
-        fetchEvents();
-        fetchReminders();
-      } else {
-        console.error('API returned error:', data.message);
-        setError(data.message || 'Failed to get response');
-      }
-    } catch (err) {
-      console.error('Error in sendMessage:', err);
-      setError('Error communicating with assistant: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // This function has been moved to the ChatInterface component
 
   // Mark a task as complete
   const completeTask = async (taskId) => {
@@ -227,6 +127,58 @@ export default function Home() {
       console.error('Error deleting task:', err);
     }
   };
+  
+  // Create a new task
+  const createTask = async (taskData) => {
+    try {
+      const response = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(taskData),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        fetchTasks();
+        return data.data;
+      } else {
+        console.error('Failed to create task:', data.message);
+        return null;
+      }
+    } catch (err) {
+      console.error('Error creating task:', err);
+      return null;
+    }
+  };
+  
+  // Update a task
+  const updateTask = async (taskId, taskData) => {
+    try {
+      const response = await fetch(`/api/tasks?id=${taskId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(taskData),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        fetchTasks();
+        return data.data;
+      } else {
+        console.error('Failed to update task:', data.message);
+        return null;
+      }
+    } catch (err) {
+      console.error('Error updating task:', err);
+      return null;
+    }
+  };
 
   // Delete an event
   const deleteEvent = async (eventId) => {
@@ -243,18 +195,68 @@ export default function Home() {
     }
   };
 
-  // Delete a reminder
-  const deleteReminder = async (reminderId) => {
+  // Goal management functions
+  const createGoal = async (goalData) => {
     try {
-      const response = await fetch(`/api/reminders?id=${reminderId}`, {
+      const response = await fetch('/api/goals', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(goalData),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        fetchGoals();
+        return data.data;
+      } else {
+        console.error('Failed to create goal:', data.message);
+        return null;
+      }
+    } catch (err) {
+      console.error('Error creating goal:', err);
+      return null;
+    }
+  };
+  
+  const updateGoal = async (goalId, goalData) => {
+    try {
+      const response = await fetch(`/api/goals?id=${goalId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(goalData),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        fetchGoals();
+        return data.data;
+      } else {
+        console.error('Failed to update goal:', data.message);
+        return null;
+      }
+    } catch (err) {
+      console.error('Error updating goal:', err);
+      return null;
+    }
+  };
+  
+  const deleteGoal = async (goalId) => {
+    try {
+      const response = await fetch(`/api/goals?id=${goalId}`, {
         method: 'DELETE',
       });
       
       if (response.ok) {
-        fetchReminders();
+        fetchGoals();
       }
     } catch (err) {
-      console.error('Error deleting reminder:', err);
+      console.error('Error deleting goal:', err);
     }
   };
 
@@ -271,234 +273,106 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">LifeAssist AI</h1>
-              <p className="mt-1 text-gray-600">Your personal AI assistant for daily life organization</p>
-            </div>
-            <div className="flex space-x-3">
-              {session ? (
-                <div className="flex items-center space-x-3">
-                  <span className="text-sm text-gray-700">
-                    {session.user.name || session.user.email}
-                  </span>
-                  <button 
-                    className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
-                    onClick={async () => {
-                      // Set intentional sign-out flag to prevent auto-login loops
-                      localStorage.setItem('intentionalSignOut', 'true');
-                      
-                      // Clear cookies
-                      document.cookie = 'userEmail=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-                      
-                      // Sign out from Firebase and NextAuth
-                      await signOutFromAll();
-                      
-                      // Clear any loop prevention data
-                      localStorage.removeItem('lastEmailAttempt');
-                      localStorage.removeItem('lastAttemptTime');
-                      
-                      // Redirect to home page
-                      window.location.href = '/';
-                    }}
-                  >
-                    Sign Out
-                  </button>
-                </div>
-              ) : (
-                <button 
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                  onClick={() => signIn('google')}
-                >
-                  Sign In
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
-      
+    <div>
       {status === 'loading' ? (
         <div className="flex justify-center items-center h-[80vh]">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
           <p className="ml-4 text-gray-600">Loading your personal assistant...</p>
         </div>
-      ) : status === 'authenticated' ? (
-        <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-          {/* Tab Navigation */}
-          <div className="mb-6 border-b border-gray-200">
-            <nav className="-mb-px flex space-x-8">
-              <button
-                className={`py-4 px-1 ${activeTab === 'chat' 
-                  ? 'border-b-2 border-blue-500 text-blue-600' 
-                  : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'} font-medium`}
-                onClick={() => setActiveTab('chat')}
-              >
-                Chat
-              </button>
-              <button
-                className={`py-4 px-1 ${activeTab === 'tasks' 
-                  ? 'border-b-2 border-blue-500 text-blue-600' 
-                  : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'} font-medium`}
-                onClick={() => setActiveTab('tasks')}
-              >
-                Tasks
-              </button>
-              <button
-                className={`py-4 px-1 ${activeTab === 'calendar' 
-                  ? 'border-b-2 border-blue-500 text-blue-600' 
-                  : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'} font-medium`}
-                onClick={() => setActiveTab('calendar')}
-              >
-                Calendar
-              </button>
-              <button
-                className={`py-4 px-1 ${activeTab === 'reminders' 
-                  ? 'border-b-2 border-blue-500 text-blue-600' 
-                  : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'} font-medium`}
-                onClick={() => setActiveTab('reminders')}
-              >
-                Reminders
-              </button>
-            </nav>
+      ) : status === 'unauthenticated' && !session ? (
+        <div className="flex flex-col justify-center items-center h-[60vh] px-4">
+          <div className="text-center max-w-md">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to LifeAssist AI</h2>
+            <p className="text-gray-600 mb-8">Sign in to access your personal AI assistant for task management, goal tracking, and calendar organization.</p>
+            <button 
+              className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center mx-auto"
+              onClick={() => signIn('google')}
+            >
+              <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)">
+                  <path fill="#FFFFFF" d="M -3.264 51.509 C -3.264 50.719 -3.334 49.969 -3.454 49.239 L -14.754 49.239 L -14.754 53.749 L -8.284 53.749 C -8.574 55.229 -9.424 56.479 -10.684 57.329 L -10.684 60.329 L -6.824 60.329 C -4.564 58.239 -3.264 55.159 -3.264 51.509 Z" />
+                  <path fill="#FFFFFF" d="M -14.754 63.239 C -11.514 63.239 -8.804 62.159 -6.824 60.329 L -10.684 57.329 C -11.764 58.049 -13.134 58.489 -14.754 58.489 C -17.884 58.489 -20.534 56.379 -21.484 53.529 L -25.464 53.529 L -25.464 56.619 C -23.494 60.539 -19.444 63.239 -14.754 63.239 Z" />
+                  <path fill="#FFFFFF" d="M -21.484 53.529 C -21.734 52.809 -21.864 52.039 -21.864 51.239 C -21.864 50.439 -21.724 49.669 -21.484 48.949 L -21.484 45.859 L -25.464 45.859 C -26.284 47.479 -26.754 49.299 -26.754 51.239 C -26.754 53.179 -26.284 54.999 -25.464 56.619 L -21.484 53.529 Z" />
+                  <path fill="#FFFFFF" d="M -14.754 43.989 C -12.984 43.989 -11.404 44.599 -10.154 45.789 L -6.734 42.369 C -8.804 40.429 -11.514 39.239 -14.754 39.239 C -19.444 39.239 -23.494 41.939 -25.464 45.859 L -21.484 48.949 C -20.534 46.099 -17.884 43.989 -14.754 43.989 Z" />
+                </g>
+              </svg>
+              Sign in with Google
+            </button>
+            <p className="mt-4 text-sm text-gray-500">You can explore the app without signing in, but your data won't be saved.</p>
           </div>
+        </div>
+      ) : status === 'authenticated' ? (
+        <div className="flex">
+          {/* Vertical Navigation */}
+          <VerticalNavigation activeTab={activeTab} setActiveTab={setActiveTab} session={session} />
+          
+          <main className="flex-1 overflow-auto py-6 px-8">
           
           {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
+            <div className="bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded mb-6">
               {error}
             </div>
           )}
           
           {/* Chat Tab */}
           {activeTab === 'chat' && (
-            <div className="bg-white shadow rounded-lg overflow-hidden">
-              <div className="p-4 bg-gray-50 border-b">
-                <h2 className="text-lg font-semibold text-gray-900">AI Assistant</h2>
-                <p className="text-sm text-gray-600">Ask me to help organize your life, manage tasks, set reminders, or schedule events</p>
-              </div>
-              
-              <div className="p-4 h-[400px] overflow-y-auto">
-                {chatHistory.length > 0 ? (
-                  <div className="space-y-4">
-                    {chatHistory.map((msg, index) => (
-                      <div 
-                        key={index} 
-                        className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div 
-                          className={`max-w-[80%] p-3 rounded-lg ${msg.role === 'user' 
-                            ? 'bg-blue-100 text-blue-900' 
-                            : 'bg-gray-100 text-gray-900'}`}
-                        >
-                          <p className="whitespace-pre-wrap">{msg.content}</p>
-                        </div>
-                      </div>
-                    ))}
-                    <div ref={messagesEndRef} />
-                  </div>
-                ) : (
-                  <div className="h-full flex flex-col justify-center items-center text-center">
-                    <svg className="h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                    </svg>
-                    <h3 className="text-lg font-medium text-gray-900">Start a conversation</h3>
-                    <p className="mt-1 text-sm text-gray-500 max-w-sm">
-                      Ask me to add tasks, schedule events, set reminders, or help organize your day
-                    </p>
-                  </div>
-                )}
-              </div>
-              
-              <div className="p-4 border-t border-gray-200">
-                <form onSubmit={sendMessage} className="flex space-x-2">
-                  <input
-                    type="text"
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Type your message..."
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-black"
-                    disabled={loading}
-                  />
-                  <button
-                    type="submit"
-                    disabled={loading || !message.trim()}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-300 flex items-center"
-                  >
-                    {loading ? (
-                      <>
-                        <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                        Sending...
-                      </>
-                    ) : (
-                      'Send'
-                    )}
-                  </button>
-                </form>
-              </div>
+            <div className="shadow rounded-lg overflow-hidden">
+              <ChatInterface 
+                session={session}
+                chatHistory={chatHistory}
+                setChatHistory={setChatHistory}
+                loading={loading}
+                setLoading={setLoading}
+                error={error}
+                setError={setError}
+                createTask={createTask}
+                fetchTasks={fetchTasks}
+                fetchEvents={fetchEvents}
+                fetchGoals={fetchGoals}
+              />
             </div>
           )}
           
-          {/* Tasks Tab */}
-          {activeTab === 'tasks' && (
-            <div className="bg-white shadow rounded-lg overflow-hidden">
-              <div className="p-4 bg-gray-50 border-b">
-                <h2 className="text-lg font-semibold text-gray-900">Your Tasks</h2>
-                <p className="text-sm text-gray-600">Manage your to-do list</p>
-              </div>
-              
-              <div className="divide-y divide-gray-200">
-                {tasks.length > 0 ? (
-                  tasks.map(task => (
-                    <div key={task.id} className="p-4 flex items-center justify-between">
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={task.completed}
-                          onChange={() => completeTask(task.id)}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                        <span className={`ml-3 ${task.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
-                          {task.title}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => deleteTask(task.id)}
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))
-                ) : (
-                  <div className="p-8 text-center text-gray-500">
-                    <p>No tasks yet. Ask the assistant to add some tasks for you.</p>
-                  </div>
-                )}
-              </div>
+          {/* Task Board Tab */}
+          {activeTab === 'board' && (
+            <div className="shadow rounded-lg overflow-hidden p-4">
+              <JiraBoard 
+                tasks={tasks} 
+                onTaskUpdate={updateTask}
+                onTaskDelete={deleteTask}
+                onTaskCreate={createTask}
+              />
+            </div>
+          )}
+          
+          {/* Goals Tab */}
+          {activeTab === 'goals' && (
+            <div className="shadow rounded-lg overflow-hidden p-4">
+              <GoalTracker 
+                goals={goals}
+                onGoalCreate={createGoal}
+                onGoalUpdate={updateGoal}
+                onGoalDelete={deleteGoal}
+              />
             </div>
           )}
           
           {/* Calendar Tab */}
           {activeTab === 'calendar' && (
-            <div className="bg-white shadow rounded-lg overflow-hidden">
-              <div className="p-4 bg-gray-50 border-b">
-                <h2 className="text-lg font-semibold text-gray-900">Your Calendar</h2>
-                <p className="text-sm text-gray-600">Upcoming events and appointments</p>
+            <div className="shadow rounded-lg overflow-hidden">
+              <div className="p-4 bg-gray-50 dark:bg-gray-900 border-b dark:border-gray-700">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Your Calendar</h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Upcoming events and appointments</p>
               </div>
               
-              <div className="divide-y divide-gray-200">
+              <div className="divide-y divide-gray-200 dark:divide-gray-700">
                 {events.length > 0 ? (
                   events.map(event => (
                     <div key={event.id} className="p-4">
                       <div className="flex justify-between">
                         <div>
-                          <h3 className="font-medium text-gray-900">{event.title}</h3>
-                          <div className="mt-1 text-sm text-gray-600">
+                          <h3 className="font-medium text-gray-900 dark:text-white">{event.title}</h3>
+                          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                             <p>Date: {formatDate(event.date)}</p>
                             {event.time && <p>Time: {event.time}</p>}
                             {event.location && <p>Location: {event.location}</p>}
@@ -506,7 +380,7 @@ export default function Home() {
                         </div>
                         <button
                           onClick={() => deleteEvent(event.id)}
-                          className="text-red-600 hover:text-red-800"
+                          className="text-red-600 hover:text-red-800 dark:text-red-500 dark:hover:text-red-400"
                         >
                           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -516,7 +390,7 @@ export default function Home() {
                     </div>
                   ))
                 ) : (
-                  <div className="p-8 text-center text-gray-500">
+                  <div className="p-8 text-center text-gray-500 dark:text-gray-400">
                     <p>No events scheduled. Ask the assistant to add events to your calendar.</p>
                   </div>
                 )}
@@ -526,7 +400,7 @@ export default function Home() {
           
           {/* Reminders Tab */}
           {activeTab === 'reminders' && (
-            <div className="bg-white shadow rounded-lg overflow-hidden">
+            <div className="shadow rounded-lg overflow-hidden">
               <div className="p-4 bg-gray-50 border-b">
                 <h2 className="text-lg font-semibold text-gray-900">Your Reminders</h2>
                 <p className="text-sm text-gray-600">Things you don't want to forget</p>
@@ -561,13 +435,14 @@ export default function Home() {
               </div>
             </div>
           )}
-        </main>
+          </main>
+        </div>
       ) : (
-        <div className="max-w-md mx-auto mt-16 p-6 bg-white rounded-lg shadow-lg text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to LifeAssist AI</h2>
-          <p className="text-gray-600 mb-6">Sign in to get started with your personal AI assistant for daily life organization</p>
+        <div className="max-w-md mx-auto mt-16 p-6 rounded-lg shadow-lg text-center">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Welcome to LifeAssist AI</h2>
+          <p className="text-gray-600 dark:text-gray-300 mb-6">Sign in to get started with your personal AI assistant for daily life organization</p>
           <button 
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600"
             onClick={() => signIn('google')}
           >
             Sign in with Google
@@ -575,16 +450,16 @@ export default function Home() {
         </div>
       )}
       
-      <footer className="bg-white border-t border-gray-200 py-6 mt-auto">
+      {/* <footer className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 py-6 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-center text-gray-500 text-sm">
+          <p className="text-center text-gray-500 dark:text-gray-400 text-sm">
             LifeAssist AI - Powered by Claude AI
           </p>
           <p className="text-center text-gray-400 text-xs mt-1">
             Your personal AI assistant for daily life organization
           </p>
         </div>
-      </footer>
+      </footer> */}
     </div>
   );
 }

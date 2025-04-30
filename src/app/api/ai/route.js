@@ -18,26 +18,24 @@ async function generateAssistantResponse(userInput, userData, calendarEvents = [
     console.log('Calling Anthropic API...');
     
     // Create a system prompt that includes user context
-    const systemPrompt = `You are a helpful AI assistant for daily life organization. 
-    You help the user manage their tasks, calendar events, and reminders.
+    const systemPrompt = `You are a helpful AI assistant for calendar management. 
+    You help the user manage their Google Calendar events.
     
-    The user's current tasks, events, and reminders are:
-    ${userData ? JSON.stringify(userData, null, 2) : 'No data available yet'}
+    IMPORTANT: Tasks and reminders functionality has been disabled. You can only help with calendar events.
     
     The user's Google Calendar events are:
     ${calendarEvents.length > 0 ? JSON.stringify(calendarEvents, null, 2) : 'No calendar events available'}
     
-    IMPORTANT: The app is now connected to Google Calendar! When you add or modify calendar events, they will be synchronized with the user's Google Calendar automatically.
+    IMPORTANT: The app is connected to Google Calendar! When you add or modify calendar events, they will be synchronized with the user's Google Calendar automatically.
     
     When the user asks to:
-    1. Add a task - Extract the task details and respond confirming you've added it
-    2. Add a calendar event - Extract date, time, title and respond confirming you've added it to both the app and Google Calendar
-    3. Set a reminder - Extract what to remind about and when, then confirm you've set it
-    4. List or show items - Provide a formatted list of the requested items
-    5. Mark tasks complete - Confirm the task has been completed
-    6. Delete items - Confirm the item has been deleted
-    7. Sync calendar - Let the user know their Google Calendar is being synchronized
-    8. Summarize calendar - Provide a summary of upcoming events from their Google Calendar
+    1. Add a calendar event - Extract date, time, title and respond confirming you've added it to Google Calendar
+    2. List or show calendar events - Provide a formatted list of the requested events
+    3. Delete calendar events - Confirm the event has been deleted
+    4. Sync calendar - Let the user know their Google Calendar is being synchronized
+    5. Summarize calendar - Provide a summary of upcoming events from their Google Calendar
+    
+    If the user asks about tasks or reminders, politely inform them that those features are currently disabled, and you can only help with calendar management.
     
     For calendar events, try to extract as much information as possible:
     - Title/summary of the event
@@ -82,8 +80,13 @@ async function processAssistantActions(response, userId) {
   const content = response.content.toLowerCase();
   
   try {
-    // Check for task creation
+    console.log('Processing assistant actions - tasks and reminders disabled');
+    
+    // Task creation disabled
     if (content.includes('added task') || content.includes('created task')) {
+      console.log('Task creation requested but functionality is disabled');
+      // Task functionality disabled
+      /* Original implementation
       const taskMatch = response.content.match(/task[:\s]+"([^"]+)"/i) || 
                         response.content.match(/task[:\s]+(.+?)(?:\.|\n|$)/i);
       
@@ -95,16 +98,19 @@ async function processAssistantActions(response, userId) {
           createdAt: serverTimestamp()
         });
       }
+      */
     }
     
-    // Check for calendar event creation
+    // Check for calendar event creation - KEEP THIS FUNCTIONALITY
     if (content.includes('added to calendar') || content.includes('scheduled event')) {
+      console.log('Calendar event creation detected');
       const eventMatch = response.content.match(/event[:\s]+"([^"]+)"/i) || 
                          response.content.match(/event[:\s]+(.+?)(?:\.|\n|$)/i);
       const dateMatch = response.content.match(/on[:\s]+([\w\s,]+)(?:\.|\n|$)/i) ||
                         response.content.match(/date[:\s]+([\w\s,]+)(?:\.|\n|$)/i);
       
       if (eventMatch && eventMatch[1]) {
+        console.log('Adding calendar event:', eventMatch[1].trim());
         await addDoc(collection(db, 'events'), {
           userId,
           title: eventMatch[1].trim(),
@@ -114,8 +120,11 @@ async function processAssistantActions(response, userId) {
       }
     }
     
-    // Check for reminder creation
+    // Reminder creation disabled
     if (content.includes('set reminder') || content.includes('remind you')) {
+      console.log('Reminder creation requested but functionality is disabled');
+      // Reminder functionality disabled
+      /* Original implementation
       const reminderMatch = response.content.match(/reminder[:\s]+"([^"]+)"/i) || 
                             response.content.match(/reminder[:\s]+(.+?)(?:\.|\n|$)/i);
       const timeMatch = response.content.match(/at[:\s]+([\w\s:,]+)(?:\.|\n|$)/i) ||
@@ -130,9 +139,8 @@ async function processAssistantActions(response, userId) {
           createdAt: serverTimestamp()
         });
       }
+      */
     }
-    
-    // More action processing could be added here
     
     return true;
   } catch (error) {
@@ -144,13 +152,15 @@ async function processAssistantActions(response, userId) {
 // Function to get user data from Firestore
 async function getUserData(userId) {
   try {
+    console.log('Getting user data - tasks and reminders disabled');
+    
     const userData = {
-      tasks: [],
-      events: [],
-      reminders: []
+      events: [] // Only keeping events, tasks and reminders disabled
     };
     
-    // Get tasks
+    // Tasks retrieval disabled
+    console.log('Tasks retrieval disabled');
+    /* Original implementation
     const tasksQuery = query(collection(db, 'tasks'), where('userId', '==', userId));
     const tasksSnapshot = await getDocs(tasksQuery);
     tasksSnapshot.forEach(doc => {
@@ -160,8 +170,10 @@ async function getUserData(userId) {
         createdAt: doc.data().createdAt?.toDate().toISOString() || new Date().toISOString()
       });
     });
+    */
     
-    // Get events
+    // Get events - KEEP THIS FUNCTIONALITY
+    console.log('Retrieving events for user:', userId);
     const eventsQuery = query(collection(db, 'events'), where('userId', '==', userId));
     const eventsSnapshot = await getDocs(eventsQuery);
     eventsSnapshot.forEach(doc => {
@@ -171,8 +183,11 @@ async function getUserData(userId) {
         createdAt: doc.data().createdAt?.toDate().toISOString() || new Date().toISOString()
       });
     });
+    console.log(`Retrieved ${userData.events.length} events`);
     
-    // Get reminders
+    // Reminders retrieval disabled
+    console.log('Reminders retrieval disabled');
+    /* Original implementation
     const remindersQuery = query(collection(db, 'reminders'), where('userId', '==', userId));
     const remindersSnapshot = await getDocs(remindersQuery);
     remindersSnapshot.forEach(doc => {
@@ -182,6 +197,7 @@ async function getUserData(userId) {
         createdAt: doc.data().createdAt?.toDate().toISOString() || new Date().toISOString()
       });
     });
+    */
     
     return userData;
   } catch (error) {

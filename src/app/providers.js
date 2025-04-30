@@ -2,6 +2,7 @@
 
 import { SessionProvider } from "next-auth/react";
 import SessionPersistence from "@/components/SessionPersistence";
+import { ThemeProvider } from "@/components/theme-provider";
 
 export function Providers({ children }) {
   return (
@@ -9,8 +10,15 @@ export function Providers({ children }) {
       refetchInterval={5 * 60} // Refetch session every 5 minutes
       refetchOnWindowFocus={true} // Refetch when window regains focus
     >
-      <SessionPersistence />
-      {children}
+      <ThemeProvider
+        attribute="class"
+        defaultTheme="system"
+        enableSystem
+        disableTransitionOnChange
+      >
+        <SessionPersistence />
+        {children}
+      </ThemeProvider>
     </SessionProvider>
   );
 }
