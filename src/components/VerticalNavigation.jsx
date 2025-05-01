@@ -4,14 +4,12 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { Icons } from "@/components/icons"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { signIn } from "next-auth/react"
-import { signOutFromAll } from "@/lib/firebaseAuth"
+import { useAuth } from "@/lib/authContext"
 
-export function VerticalNavigation({ activeTab, setActiveTab, session }) {
+export function VerticalNavigation({ activeTab, setActiveTab }) {
+  const { user, signIn, signOut } = useAuth();
   const tabs = [
     { id: 'chat', label: 'Chat', icon: Icons.chat },
-    { id: 'board', label: 'Task Board', icon: Icons.board },
-    { id: 'goals', label: 'Goals', icon: Icons.goals },
     { id: 'calendar', label: 'Calendar', icon: Icons.calendar },
   ]
 
@@ -26,18 +24,18 @@ export function VerticalNavigation({ activeTab, setActiveTab, session }) {
       </div>
       
       {/* User Profile */}
-      {session && (
+      {user && (
         <div className="px-6 py-4">
           <div className="flex items-center space-x-3">
-            {session.user.image && (
+            {user.image && (
               <img 
-                src={session.user.image} 
+                src={user.image} 
                 alt="Profile" 
                 className="h-8 w-8 rounded-full" 
               />
             )}
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
-              {session.user.name || session.user.email}
+              {user.name || user.email}
             </span>
           </div>
         </div>
@@ -65,33 +63,18 @@ export function VerticalNavigation({ activeTab, setActiveTab, session }) {
       
       {/* Sign In/Out Button */}
       <div className="mt-auto px-4 pb-4">
-        {session ? (
+        {user ? (
           <button 
             className="w-full px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors flex items-center justify-center"
-            onClick={async () => {
-              // Set intentional sign-out flag to prevent auto-login loops
-              localStorage.setItem('intentionalSignOut', 'true');
-              
-              // Clear cookies
-              document.cookie = 'userEmail=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-              
-              // Sign out from Firebase and NextAuth
-              await signOutFromAll();
-              
-              // Clear any loop prevention data
-              localStorage.removeItem('lastEmailAttempt');
-              localStorage.removeItem('lastAttemptTime');
-              
-              // Redirect to home page
-              window.location.href = '/';
-            }}
+            onClick={signOut}
           >
+            <Icons.logout className="mr-2 h-4 w-4" />
             Sign Out
           </button>
         ) : (
           <button 
             className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 transition-colors flex items-center justify-center"
-            onClick={() => signIn('google')}
+            onClick={signIn}
           >
             <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
               <g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)">

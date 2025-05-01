@@ -5,7 +5,8 @@ import {
   MessageSquare, 
   Kanban, 
   Target, 
-  Calendar
+  Calendar,
+  LogOut
 } from "lucide-react"
 
 export const Icons = {
@@ -26,5 +27,6 @@ export const Icons = {
   chat: MessageSquare,
   board: Kanban,
   goals: Target,
-  calendar: Calendar
+  calendar: Calendar,
+  logout: LogOut
 }

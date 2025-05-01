@@ -2,11 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSession, signIn } from 'next-auth/react';
-import { signOutFromAll } from '@/lib/firebaseAuth';
-import JiraBoard from '@/components/JiraBoard';
-import GoalTracker from '@/components/GoalTracker';
-import ChatInterface from '@/components/ChatInterface';
+import { useAuth } from '@/lib/authContext';
+import { ChatInterface } from '@/components/ChatInterface';
 import { VerticalNavigation } from '@/components/VerticalNavigation';
 
 export default function Home() {
@@ -14,46 +11,23 @@ export default function Home() {
   const [chatHistory, setChatHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  
-  // State variables for tasks, events, and goals
-  const [tasks, setTasks] = useState([]);
+
   const [events, setEvents] = useState([]);
-  const [goals, setGoals] = useState([]);
   
   // UI state
   const [activeTab, setActiveTab] = useState('chat');
   
   // Authentication state
-  const { data: session, status } = useSession();
+  const { user, loading: authLoading, signIn } = useAuth();
   const router = useRouter();
 
-  // Fetch user data on component mount if authenticated
+  // Check if user is authenticated
   useEffect(() => {
-    if (session && session.user) {
-      fetchTasks();
-      fetchEvents();
-      fetchGoals();
-      
-      console.log('Fetching tasks, events, and goals');
+    if (!authLoading && !user && activeTab === 'templates') {
+      router.push('/');
+      setActiveTab('chat');
     }
-  }, [session]);
-
-  // Fetch tasks from API
-  const fetchTasks = async () => {
-    try {
-      const response = await fetch('/api/tasks');
-      const data = await response.json();
-      
-      if (data.success) {
-        setTasks(data.data);
-        console.log('Tasks loaded:', data.data.length);
-      } else {
-        console.error('Failed to load tasks');
-      }
-    } catch (err) {
-      console.error('Error loading tasks:', err);
-    }
-  };
+  }, [authLoading, user, activeTab, router]);
 
   // Fetch events from API
   const fetchEvents = async () => {
@@ -72,113 +46,6 @@ export default function Home() {
   };
 
   // Fetch reminders from API
-  // Fetch goals from API
-  const fetchGoals = async () => {
-    try {
-      const response = await fetch('/api/goals');
-      const data = await response.json();
-      
-      if (data.success) {
-        setGoals(data.data);
-        console.log('Goals loaded:', data.data.length);
-      } else {
-        console.error('Failed to load goals');
-      }
-    } catch (err) {
-      console.error('Error loading goals:', err);
-    }
-  };
-
-  // This function has been moved to the ChatInterface component
-
-  // Mark a task as complete
-  const completeTask = async (taskId) => {
-    try {
-      const response = await fetch('/api/tasks', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id: taskId,
-          completed: true
-        }),
-      });
-      
-      if (response.ok) {
-        fetchTasks();
-      }
-    } catch (err) {
-      console.error('Error completing task:', err);
-    }
-  };
-
-  // Delete a task
-  const deleteTask = async (taskId) => {
-    try {
-      const response = await fetch(`/api/tasks?id=${taskId}`, {
-        method: 'DELETE',
-      });
-      
-      if (response.ok) {
-        fetchTasks();
-      }
-    } catch (err) {
-      console.error('Error deleting task:', err);
-    }
-  };
-  
-  // Create a new task
-  const createTask = async (taskData) => {
-    try {
-      const response = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(taskData),
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        fetchTasks();
-        return data.data;
-      } else {
-        console.error('Failed to create task:', data.message);
-        return null;
-      }
-    } catch (err) {
-      console.error('Error creating task:', err);
-      return null;
-    }
-  };
-  
-  // Update a task
-  const updateTask = async (taskId, taskData) => {
-    try {
-      const response = await fetch(`/api/tasks?id=${taskId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(taskData),
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        fetchTasks();
-        return data.data;
-      } else {
-        console.error('Failed to update task:', data.message);
-        return null;
-      }
-    } catch (err) {
-      console.error('Error updating task:', err);
-      return null;
-    }
-  };
 
   // Delete an event
   const deleteEvent = async (eventId) => {
@@ -195,70 +62,7 @@ export default function Home() {
     }
   };
 
-  // Goal management functions
-  const createGoal = async (goalData) => {
-    try {
-      const response = await fetch('/api/goals', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(goalData),
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        fetchGoals();
-        return data.data;
-      } else {
-        console.error('Failed to create goal:', data.message);
-        return null;
-      }
-    } catch (err) {
-      console.error('Error creating goal:', err);
-      return null;
-    }
-  };
-  
-  const updateGoal = async (goalId, goalData) => {
-    try {
-      const response = await fetch(`/api/goals?id=${goalId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(goalData),
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        fetchGoals();
-        return data.data;
-      } else {
-        console.error('Failed to update goal:', data.message);
-        return null;
-      }
-    } catch (err) {
-      console.error('Error updating goal:', err);
-      return null;
-    }
-  };
-  
-  const deleteGoal = async (goalId) => {
-    try {
-      const response = await fetch(`/api/goals?id=${goalId}`, {
-        method: 'DELETE',
-      });
-      
-      if (response.ok) {
-        fetchGoals();
-      }
-    } catch (err) {
-      console.error('Error deleting goal:', err);
-    }
-  };
+
 
   // Format date for display
   const formatDate = (dateString) => {
@@ -274,19 +78,19 @@ export default function Home() {
 
   return (
     <div>
-      {status === 'loading' ? (
+      {authLoading ? (
         <div className="flex justify-center items-center h-[80vh]">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
           <p className="ml-4 text-gray-600">Loading your personal assistant...</p>
         </div>
-      ) : status === 'unauthenticated' && !session ? (
+      ) : !user ? (
         <div className="flex flex-col justify-center items-center h-[60vh] px-4">
           <div className="text-center max-w-md">
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to LifeAssist AI</h2>
-            <p className="text-gray-600 mb-8">Sign in to access your personal AI assistant for task management, goal tracking, and calendar organization.</p>
+            <p className="text-gray-600 mb-8">Sign in to access your personal AI assistant for calendar organization.</p>
             <button 
               className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center mx-auto"
-              onClick={() => signIn('google')}
+              onClick={signIn}
             >
               <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)">
@@ -301,10 +105,10 @@ export default function Home() {
             <p className="mt-4 text-sm text-gray-500">You can explore the app without signing in, but your data won't be saved.</p>
           </div>
         </div>
-      ) : status === 'authenticated' ? (
+      ) : user ? (
         <div className="flex">
           {/* Vertical Navigation */}
-          <VerticalNavigation activeTab={activeTab} setActiveTab={setActiveTab} session={session} />
+          <VerticalNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
           
           <main className="flex-1 overflow-auto py-6 px-8">
           
@@ -316,44 +120,43 @@ export default function Home() {
           
           {/* Chat Tab */}
           {activeTab === 'chat' && (
-            <div className="shadow rounded-lg overflow-hidden">
-              <ChatInterface 
-                session={session}
-                chatHistory={chatHistory}
-                setChatHistory={setChatHistory}
-                loading={loading}
-                setLoading={setLoading}
-                error={error}
-                setError={setError}
-                createTask={createTask}
-                fetchTasks={fetchTasks}
-                fetchEvents={fetchEvents}
-                fetchGoals={fetchGoals}
-              />
+            <div className="shadow rounded-lg overflow-hidden h-[600px]">
+              {user ? (
+                <ChatInterface 
+                  initialMessages={[
+                    {
+                      id: 'welcome',
+                      role: 'assistant',
+                      content: 'Hello! I can help you with managing your calendar, summarizing news, and answering questions. What would you like to do today?'
+                    }
+                  ]}
+                  user={user}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center p-6">
+                    <h3 className="text-lg font-medium mb-2">Sign in to use the chat</h3>
+                    <p className="text-muted-foreground mb-4">You need to be signed in to use the AI assistant.</p>
+                    <button 
+                      onClick={() => signIn('google')} 
+                      className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90"
+                    >
+                      Sign in with Google
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           
-          {/* Task Board Tab */}
-          {activeTab === 'board' && (
-            <div className="shadow rounded-lg overflow-hidden p-4">
-              <JiraBoard 
-                tasks={tasks} 
-                onTaskUpdate={updateTask}
-                onTaskDelete={deleteTask}
-                onTaskCreate={createTask}
-              />
-            </div>
-          )}
+
           
           {/* Goals Tab */}
           {activeTab === 'goals' && (
             <div className="shadow rounded-lg overflow-hidden p-4">
-              <GoalTracker 
-                goals={goals}
-                onGoalCreate={createGoal}
-                onGoalUpdate={updateGoal}
-                onGoalDelete={deleteGoal}
-              />
+              <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+                <p>Goal tracking functionality has been removed.</p>
+              </div>
             </div>
           )}
           
