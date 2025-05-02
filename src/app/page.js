@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/authContext';
 import { ChatInterface } from '@/components/ChatInterface';
 import { VerticalNavigation } from '@/components/VerticalNavigation';
+import { CalendarView } from '@/components/CalendarView';
 
 export default function Home() {
   // State for chat functionality
@@ -163,40 +164,9 @@ export default function Home() {
           {/* Calendar Tab */}
           {activeTab === 'calendar' && (
             <div className="shadow rounded-lg overflow-hidden">
-              <div className="p-4 bg-gray-50 dark:bg-gray-900 border-b dark:border-gray-700">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Your Calendar</h2>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Upcoming events and appointments</p>
-              </div>
-              
-              <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                {events.length > 0 ? (
-                  events.map(event => (
-                    <div key={event.id} className="p-4">
-                      <div className="flex justify-between">
-                        <div>
-                          <h3 className="font-medium text-gray-900 dark:text-white">{event.title}</h3>
-                          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                            <p>Date: {formatDate(event.date)}</p>
-                            {event.time && <p>Time: {event.time}</p>}
-                            {event.location && <p>Location: {event.location}</p>}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => deleteEvent(event.id)}
-                          className="text-red-600 hover:text-red-800 dark:text-red-500 dark:hover:text-red-400"
-                        >
-                          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-                    <p>No events scheduled. Ask the assistant to add events to your calendar.</p>
-                  </div>
-                )}
+              <div className="p-4">
+                {/* Display the CalendarView component */}
+                <CalendarView />
               </div>
             </div>
           )}

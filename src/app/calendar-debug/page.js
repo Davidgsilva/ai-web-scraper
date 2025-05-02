@@ -1,19 +1,19 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/lib/authContext';
 
 export default function CalendarDebugPage() {
-  const { data: session, status } = useSession();
-  const [events, setEvents] = useState([]);
+  const { user, loading: authLoading } = useAuth();
+  const [events, setEvents] = useState([]); // Initialize with empty array
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [rawResponse, setRawResponse] = useState(null);
 
   // Function to fetch calendar events
   const fetchCalendarEvents = async () => {
-    // Check for access token in both possible locations
-    const accessToken = session?.accessToken || session?.user?.accessToken;
+    // Check for access token
+    const accessToken = user?.accessToken;
     
     if (!accessToken) {
       setError("No access token available. Please sign in.");
@@ -40,8 +40,9 @@ export default function CalendarDebugPage() {
       setRawResponse(data);
       
       if (data.success) {
-        setEvents(data.data);
-        console.log('Calendar events:', data.data);
+        // The API returns events in data.events, not data.data
+        setEvents(data.events || []);
+        console.log('Calendar events:', data.events || []);
       } else {
         setError(data.message || 'Failed to fetch calendar events');
       }
@@ -55,18 +56,15 @@ export default function CalendarDebugPage() {
 
   // Check authentication status
   useEffect(() => {
-    if (status === 'authenticated') {
-      console.log('Session data:', {
-        user: session.user ? {
-          name: session.user.name,
-          email: session.user.email,
-          id: session.user.id
-        } : 'No user data',
-        accessToken: session.accessToken ? 'Present (hidden)' : 'Missing',
-        expires: session.expires
+    if (user) {
+      console.log('User data:', {
+        name: user.displayName,
+        email: user.email,
+        id: user.uid,
+        accessToken: user.accessToken ? 'Present (hidden)' : 'Missing'
       });
     }
-  }, [session, status]);
+  }, [user]);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -77,29 +75,26 @@ export default function CalendarDebugPage() {
         <p className="mb-4">
           <span className="font-medium">Current Status:</span>{' '}
           <span className={`px-2 py-1 rounded ${
-            status === 'authenticated' ? 'bg-green-100 text-green-800' : 
-            status === 'loading' ? 'bg-yellow-100 text-yellow-800' : 
+            user ? 'bg-green-100 text-green-800' : 
+            authLoading ? 'bg-yellow-100 text-yellow-800' : 
             'bg-red-100 text-red-800'
           }`}>
-            {status}
+            {authLoading ? 'loading' : user ? 'authenticated' : 'unauthenticated'}
           </span>
         </p>
         
-        {status === 'authenticated' && (
+        {user && (
           <div>
             <p className="mb-2">
-              <span className="font-medium">User:</span> {session.user?.name} ({session.user?.email})
+              <span className="font-medium">User:</span> {user.displayName} ({user.email})
             </p>
             <p className="mb-2">
               <span className="font-medium">Access Token:</span> {
-                (session.accessToken || session.user?.accessToken) ? 'Present' : 'Missing'
+                user.accessToken ? 'Present' : 'Missing'
               }
             </p>
             <p className="mb-2">
-              <span className="font-medium">Token Location:</span> {
-                session.accessToken ? 'session.accessToken' : 
-                session.user?.accessToken ? 'session.user.accessToken' : 'Not found'
-              }
+              <span className="font-medium">User ID:</span> {user.uid}
             </p>
           </div>
         )}
@@ -107,9 +102,9 @@ export default function CalendarDebugPage() {
         <div className="mt-4">
           <button
             onClick={fetchCalendarEvents}
-            disabled={loading || status !== 'authenticated'}
+            disabled={loading || authLoading || !user}
             className={`px-4 py-2 rounded font-medium ${
-              loading || status !== 'authenticated' 
+              loading || authLoading || !user 
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
                 : 'bg-blue-500 text-white hover:bg-blue-600'
             }`}
@@ -126,7 +121,7 @@ export default function CalendarDebugPage() {
         </div>
       )}
       
-      {events.length > 0 && (
+      {events && events.length > 0 && (
         <div className="bg-white shadow-md rounded-lg p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4">Calendar Events</h2>
           <div className="space-y-4">

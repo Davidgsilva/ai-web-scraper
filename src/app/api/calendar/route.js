@@ -1,5 +1,5 @@
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/authOptions';
+import { cookies } from 'next/headers';
+import { getUserSession } from '@/lib/firebaseAuth';
 import { 
   listEvents, 
   getEvent,
@@ -15,19 +15,31 @@ import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, where, s
 // Get events from Google Calendar
 export async function GET(request) {
   try {
-    // Get the authenticated session
-    const session = await getServerSession(authOptions);
+    // Get the user ID from cookies
+    const cookieStore = cookies();
+    const userId = cookieStore.get('userId')?.value;
     
-    // Check for Authorization header as fallback
-    let accessToken = session?.accessToken || session?.user?.accessToken;
-    
-    if (!accessToken) {
-      const authHeader = request.headers.get('Authorization');
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        accessToken = authHeader.substring(7);
-        console.log('Using access token from Authorization header');
-      }
+    if (!userId) {
+      return Response.json({ 
+        success: false, 
+        message: "Authentication required",
+        events: null
+      }, { status: 401 });
     }
+    
+    // Get user session from Firebase
+    const userSession = await getUserSession(userId);
+    
+    if (!userSession) {
+      return Response.json({ 
+        success: false, 
+        message: "User session not found",
+        events: null
+      }, { status: 401 });
+    }
+    
+    // Get access token from user session
+    const accessToken = userSession.accessToken;
     
     if (!accessToken) {
       return Response.json({ 
@@ -64,7 +76,7 @@ export async function GET(request) {
         const response = {
           success: true,
           message: "Event retrieved successfully",
-          data: formattedEvent
+          events: [formattedEvent]
         };
         
         console.log('GET specific event response:', response);
@@ -87,11 +99,11 @@ export async function GET(request) {
     const events = googleEvents.map(event => formatEventForFirebase(event));
     
     // Store events in Firebase for our app's use
-    await syncGoogleEventsToFirebase(events, session?.user?.id);
+    await syncGoogleEventsToFirebase(events, userId);
     
     const response = { 
       success: true, 
-      data: events
+      events: events
     };
     
     console.log('GET events list response:', {
@@ -119,19 +131,31 @@ export async function GET(request) {
 // Create a new event in Google Calendar
 export async function POST(request) {
   try {
-    // Get the authenticated session
-    const session = await getServerSession(authOptions);
+    // Get the user ID from cookies
+    const cookieStore = cookies();
+    const userId = cookieStore.get('userId')?.value;
     
-    // Check for Authorization header as fallback
-    let accessToken = session?.accessToken || session?.user?.accessToken;
-    
-    if (!accessToken) {
-      const authHeader = request.headers.get('Authorization');
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        accessToken = authHeader.substring(7);
-        console.log('Using access token from Authorization header');
-      }
+    if (!userId) {
+      return Response.json({ 
+        success: false, 
+        message: "Authentication required",
+        data: null
+      }, { status: 401 });
     }
+    
+    // Get user session from Firebase
+    const userSession = await getUserSession(userId);
+    
+    if (!userSession) {
+      return Response.json({ 
+        success: false, 
+        message: "User session not found",
+        data: null
+      }, { status: 401 });
+    }
+    
+    // Get access token from user session
+    const accessToken = userSession.accessToken;
     
     if (!accessToken) {
       return Response.json({ 
@@ -160,7 +184,7 @@ export async function POST(request) {
       time: time || null,
       location: location || null,
       description: description || null,
-      userId: session.user.id,
+      userId: userId, // Use the userId from cookies
       createdAt: serverTimestamp()
     };
     
@@ -221,16 +245,16 @@ export async function PATCH(request) {
     // Get the authenticated session
     const session = await getServerSession(authOptions);
     
-    // Check for Authorization header as fallback
-    let accessToken = session?.accessToken || session?.user?.accessToken;
-    
-    if (!accessToken) {
-      const authHeader = request.headers.get('Authorization');
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        accessToken = authHeader.substring(7);
-        console.log('Using access token from Authorization header');
-      }
+    if (!userSession) {
+      return Response.json({ 
+        success: false, 
+        message: "User session not found",
+        data: null
+      }, { status: 401 });
     }
+    
+    // Get access token from user session
+    const accessToken = userSession.accessToken;
     
     if (!accessToken) {
       return Response.json({ 
@@ -295,19 +319,31 @@ export async function PATCH(request) {
 // Delete an event (DELETE method)
 export async function DELETE(request) {
   try {
-    // Get the authenticated session
-    const session = await getServerSession(authOptions);
+    // Get the user ID from cookies
+    const cookieStore = cookies();
+    const userId = cookieStore.get('userId')?.value;
     
-    // Check for Authorization header as fallback
-    let accessToken = session?.accessToken || session?.user?.accessToken;
-    
-    if (!accessToken) {
-      const authHeader = request.headers.get('Authorization');
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        accessToken = authHeader.substring(7);
-        console.log('Using access token from Authorization header');
-      }
+    if (!userId) {
+      return Response.json({ 
+        success: false, 
+        message: "Authentication required",
+        data: null
+      }, { status: 401 });
     }
+    
+    // Get user session from Firebase
+    const userSession = await getUserSession(userId);
+    
+    if (!userSession) {
+      return Response.json({ 
+        success: false, 
+        message: "User session not found",
+        data: null
+      }, { status: 401 });
+    }
+    
+    // Get access token from user session
+    const accessToken = userSession.accessToken;
     
     if (!accessToken) {
       return Response.json({ 
