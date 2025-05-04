@@ -1,24 +1,80 @@
 import { google } from 'googleapis';
+import { getUserSession, saveUserSession } from '@/lib/firebaseAuth';
+import { refreshAccessToken } from '@/app/api/auth/authOptions';
 
-// Function to create Google Calendar API client
-export function getGoogleCalendarClient(accessToken) {
+// Function to check if token is expired or about to expire (within 5 minutes)
+function isTokenExpired(expiryTime) {
+  if (!expiryTime) return true;
+  // Add a 5-minute buffer to avoid edge cases
+  return Date.now() >= (expiryTime - 5 * 60 * 1000);
+}
+
+// Function to create Google Calendar API client with automatic token refresh
+export async function getGoogleCalendarClient(accessToken, userId = null, userSession = null) {
+  // Log partial token for debugging
+  console.log(`Creating Google Calendar client with token starting with: ${accessToken?.substring(0, 10)}...`);
+  
+  if (!accessToken) {
+    throw new Error('No access token provided for Google Calendar API');
+  }
+  
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
   );
   
+  // If we have a userId, we can handle token refresh
+  if (userId) {
+    // Get the full user session if not provided
+    if (!userSession) {
+      userSession = await getUserSession(userId);
+    }
+    
+    if (userSession && userSession.refreshToken) {
+      // Check if token is expired or about to expire
+      if (isTokenExpired(userSession.accessTokenExpires)) {
+        console.log('Access token is expired or about to expire. Refreshing...');
+        try {
+          // Refresh the token
+          const refreshedTokens = await refreshAccessToken(userSession.refreshToken);
+          
+          // Update the access token
+          accessToken = refreshedTokens.accessToken;
+          
+          // Update the user session in Firebase with the new tokens
+          await saveUserSession(userId, {
+            ...userSession,
+            accessToken: refreshedTokens.accessToken,
+            accessTokenExpires: refreshedTokens.accessTokenExpires,
+            refreshToken: refreshedTokens.refreshToken,
+            lastUpdated: new Date()
+          });
+          
+          console.log('Token refreshed and session updated successfully');
+        } catch (error) {
+          console.error('Error refreshing token:', error);
+          // Continue with the existing token and let the API call handle any auth errors
+        }
+      }
+    }
+  }
+  
+  // Set the complete credentials object
   oauth2Client.setCredentials({
-    access_token: accessToken
+    access_token: accessToken,
+    scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar'
   });
   
   return google.calendar({ version: 'v3', auth: oauth2Client });
 }
 
 // List upcoming events from the user's primary calendar
-export async function listEvents(accessToken, maxResults = 10) {
+export async function listEvents(accessToken, maxResults = 10, userId = null, userSession = null) {
   try {
     console.log(`Initializing Google Calendar client with token: ${accessToken.substring(0, 10)}...`);
-    const calendar = getGoogleCalendarClient(accessToken);
+    // Pass userId and userSession to enable automatic token refresh
+    const calendar = await getGoogleCalendarClient(accessToken, userId, userSession);
     
     // Calculate date range - from 30 days ago to 365 days in the future
     // This ensures we get past events and future events

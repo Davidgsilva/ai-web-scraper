@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/authContext"
 
 export function VerticalNavigation({ activeTab, setActiveTab }) {
   const { user, signIn, signOut } = useAuth();
+
   const tabs = [
     { id: 'chat', label: 'Chat', icon: Icons.chat },
     { id: 'calendar', label: 'Calendar', icon: Icons.calendar },
@@ -28,13 +29,22 @@ export function VerticalNavigation({ activeTab, setActiveTab }) {
         <div className="px-6 py-4">
           <div className="flex items-center space-x-3">
             {user.image && (
-              <img 
-                src={user.image} 
-                alt="Profile" 
-                className="h-8 w-8 rounded-full" 
-              />
+              <>
+                <img 
+                  src={user.image.replace('=s96-c', '=s96-c-rw')} 
+                  alt="Profile" 
+                  className="h-8 w-8 rounded-full"
+                  referrerPolicy="no-referrer"
+                  crossOrigin="anonymous"
+                  onError={(e) => {
+                    console.error('Image failed to load:', e);
+                    // Fallback to a default avatar if Google image fails
+                    e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.name || user.email);
+                  }}
+                />
+              </>
             )}
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
+            <span className="text-sm font-medium truncate">
               {user.name || user.email}
             </span>
           </div>

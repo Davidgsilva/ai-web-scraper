@@ -15,9 +15,13 @@ import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, where, s
 // Get events from Google Calendar
 export async function GET(request) {
   try {
-    // Get the user ID from cookies
-    const cookieStore = cookies();
-    const userId = cookieStore.get('userId')?.value;
+    // Get the user ID from cookies - properly handling in Next.js 14/15
+    const cookieStore = await cookies();
+    // First, get all cookies and await them
+    const cookieList = cookieStore.getAll();
+    // Then find the userId cookie in the list
+    const userIdCookie = cookieList.find(cookie => cookie.name === 'userId');
+    const userId = userIdCookie?.value;
     
     if (!userId) {
       return Response.json({ 
@@ -93,26 +97,36 @@ export async function GET(request) {
     
     // Otherwise, fetch list of events
     console.log(`Fetching up to ${maxResults} events from calendar: ${calendarId}`);
-    const googleEvents = await listEvents(accessToken, parseInt(maxResults));
-    
-    // Convert to our app's format
-    const events = googleEvents.map(event => formatEventForFirebase(event));
-    
-    // Store events in Firebase for our app's use
-    await syncGoogleEventsToFirebase(events, userId);
-    
-    const response = { 
-      success: true, 
-      events: events
-    };
-    
-    console.log('GET events list response:', {
-      success: true,
-      count: events.length,
-      firstEvent: events.length > 0 ? events[0].title : 'No events'
-    });
-    
-    return Response.json(response);
+    try {
+      // Pass userId to enable automatic token refresh
+      const googleEvents = await listEvents(accessToken, parseInt(maxResults), userId, userSession);
+      
+      // Convert to our app's format
+      const events = googleEvents.map(event => formatEventForFirebase(event));
+      
+      // Store events in Firebase for our app's use
+      await syncGoogleEventsToFirebase(events, userId);
+      
+      const response = { 
+        success: true, 
+        events: events
+      };
+      
+      console.log('GET events list response:', {
+        success: true,
+        count: events.length,
+        firstEvent: events.length > 0 ? events[0].title : 'No events'
+      });
+      
+      return Response.json(response);
+    } catch (error) {
+      console.error('Error processing calendar events:', error);
+      return Response.json({ 
+        success: false, 
+        message: error.message || "Failed to process calendar events",
+        events: []
+      }, { status: 500 });
+    }
   } catch (error) {
     console.error('Error fetching Google Calendar events:', error);
     
@@ -131,9 +145,13 @@ export async function GET(request) {
 // Create a new event in Google Calendar
 export async function POST(request) {
   try {
-    // Get the user ID from cookies
-    const cookieStore = cookies();
-    const userId = cookieStore.get('userId')?.value;
+    // Get the user ID from cookies - properly handling in Next.js 14/15
+    const cookieStore = await cookies();
+    // First, get all cookies and await them
+    const cookieList = cookieStore.getAll();
+    // Then find the userId cookie in the list
+    const userIdCookie = cookieList.find(cookie => cookie.name === 'userId');
+    const userId = userIdCookie?.value;
     
     if (!userId) {
       return Response.json({ 
@@ -319,9 +337,13 @@ export async function PATCH(request) {
 // Delete an event (DELETE method)
 export async function DELETE(request) {
   try {
-    // Get the user ID from cookies
-    const cookieStore = cookies();
-    const userId = cookieStore.get('userId')?.value;
+    // Get the user ID from cookies - properly handling in Next.js 14/15
+    const cookieStore = await cookies();
+    // First, get all cookies and await them
+    const cookieList = cookieStore.getAll();
+    // Then find the userId cookie in the list
+    const userIdCookie = cookieList.find(cookie => cookie.name === 'userId');
+    const userId = userIdCookie?.value;
     
     if (!userId) {
       return Response.json({ 

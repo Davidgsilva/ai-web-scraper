@@ -9,7 +9,7 @@ export async function transcribeAudio(audioBlob) {
   try {
     // Create a FormData object to send the audio file
     const formData = new FormData();
-    formData.append('audio', audioBlob, 'recording.wav');
+    formData.append('audio', audioBlob, 'recording.webm');
 
     // Send the audio to the transcription API
     const response = await fetch('/api/transcribe', {

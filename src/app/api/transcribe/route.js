@@ -1,16 +1,37 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/authOptions';
+import { cookies } from 'next/headers';
+import { getUserSession } from '@/lib/firebaseAuth';
+import OpenAI from 'openai';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
-// No need for Anthropic client in this route
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function POST(req) {
   try {
-    // Check authentication
-    const session = await getServerSession(authOptions);
-    if (!session || !session.user) {
+    // Get user ID from cookies
+    const cookieStore = await cookies();
+    const userId = cookieStore.get('userId')?.value;
+    
+    if (!userId) {
+      console.error('Authentication failed: No user ID in cookies');
       return NextResponse.json(
         { error: 'You must be signed in to use this API.' },
+        { status: 401 }
+      );
+    }
+    
+    // Get user session from Firebase
+    const userSession = await getUserSession(userId);
+    
+    if (!userSession) {
+      console.error('Authentication failed: No user session found in Firebase');
+      return NextResponse.json(
+        { error: 'Your session has expired. Please sign in again.' },
         { status: 401 }
       );
     }
@@ -29,16 +50,38 @@ export async function POST(req) {
     // Convert the audio file to an ArrayBuffer
     const arrayBuffer = await audioFile.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-
-    // For demonstration purposes, we're using a placeholder
-    // In a real implementation, you would use a service like OpenAI's Whisper API
-    // or another speech-to-text service
     
-    // Placeholder implementation
-    // In a real app, you would replace this with a call to a transcription service
-    const text = "This is a placeholder transcription. In a real implementation, you would integrate with a speech-to-text service.";
+    // Create a temporary file with the correct extension
+    const tempDir = os.tmpdir();
+    const tempFilePath = path.join(tempDir, `recording-${Date.now()}.webm`);
     
-    return NextResponse.json({ text });
+    // Write the buffer to a temporary file
+    fs.writeFileSync(tempFilePath, buffer);
+    
+    try {
+      console.log('Sending audio to OpenAI for transcription');
+      
+      // Use OpenAI's Whisper API for transcription
+      const transcription = await openai.audio.transcriptions.create({
+        file: fs.createReadStream(tempFilePath),
+        model: "whisper-1",
+        language: "en"
+      });
+      
+      // Clean up the temporary file
+      fs.unlinkSync(tempFilePath);
+      
+      return NextResponse.json({ text: transcription.text });
+    } catch (transcriptionError) {
+      console.error('OpenAI transcription error:', transcriptionError);
+      
+      // Clean up the temporary file even if transcription fails
+      if (fs.existsSync(tempFilePath)) {
+        fs.unlinkSync(tempFilePath);
+      }
+      
+      throw transcriptionError;
+    }
   } catch (error) {
     console.error('Error in transcription API:', error);
     return NextResponse.json(

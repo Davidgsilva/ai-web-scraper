@@ -355,7 +355,8 @@ export function MessageInput({
       }
 
       recorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: "audio/wav" })
+        // Use WebM format which is natively supported by browsers and OpenAI
+        const audioBlob = new Blob(audioChunks, { type: "audio/webm" })
         try {
           const transcript = await transcribeAudio(audioBlob)
           onChange({ target: { value: transcript } })

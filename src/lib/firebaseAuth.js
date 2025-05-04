@@ -1,9 +1,11 @@
 import { db, auth } from './firebase';
-import { collection, doc, setDoc, getDoc, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, query, where, getDocs, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { signInWithCustomToken, signOut as firebaseSignOut } from 'firebase/auth';
 
-// Collection reference for user sessions
+// Collection references
 const usersCollection = collection(db, 'users');
+const habitsCollection = (userId) => collection(db, 'users', userId, 'habits');
+const habitCompletionsCollection = (userId) => collection(db, 'users', userId, 'habitCompletions');
 
 /**
  * Initialize Firebase auth with the current user session
@@ -156,5 +158,159 @@ export async function signOutFromAll() {
   } catch (error) {
     console.error('Error signing out:', error);
     return false;
+  }
+}
+
+/**
+ * Habit Management Functions
+ */
+
+/**
+ * Get all habits for a user
+ * @param {string} userId - The user's ID
+ * @returns {Array} Array of habit objects
+ */
+export async function getUserHabits(userId) {
+  if (!userId) return [];
+  
+  try {
+    const habitsRef = habitsCollection(userId);
+    const habitsSnapshot = await getDocs(habitsRef);
+    
+    const habits = [];
+    habitsSnapshot.forEach(doc => {
+      habits.push({
+        id: doc.id,
+        ...doc.data()
+      });
+    });
+    
+    return habits;
+  } catch (error) {
+    console.error('Error getting user habits:', error);
+    return [];
+  }
+}
+
+/**
+ * Add a new habit for a user
+ * @param {string} userId - The user's ID
+ * @param {string} habitName - The name of the habit
+ * @returns {Object|null} The created habit or null if failed
+ */
+export async function addHabit(userId, habitName) {
+  if (!userId || !habitName.trim()) return null;
+  
+  try {
+    const habitsRef = habitsCollection(userId);
+    const newHabit = {
+      name: habitName.trim(),
+      createdAt: serverTimestamp()
+    };
+    
+    const docRef = doc(habitsRef);
+    await setDoc(docRef, newHabit);
+    
+    return {
+      id: docRef.id,
+      ...newHabit,
+      createdAt: new Date() // Replace serverTimestamp with actual date for immediate use
+    };
+  } catch (error) {
+    console.error('Error adding habit:', error);
+    return null;
+  }
+}
+
+/**
+ * Delete a habit
+ * @param {string} userId - The user's ID
+ * @param {string} habitId - The habit ID to delete
+ * @returns {boolean} Success status
+ */
+export async function deleteHabit(userId, habitId) {
+  if (!userId || !habitId) return false;
+  
+  try {
+    await deleteDoc(doc(db, 'users', userId, 'habits', habitId));
+    return true;
+  } catch (error) {
+    console.error('Error deleting habit:', error);
+    return false;
+  }
+}
+
+/**
+ * Toggle habit completion for a specific day
+ * @param {string} userId - The user's ID
+ * @param {string} habitId - The habit ID
+ * @param {Date} date - The date to toggle completion for
+ * @returns {Object} Object containing the updated status and completion data
+ */
+export async function toggleHabitCompletion(userId, habitId, date) {
+  if (!userId || !habitId || !date) {
+    return { success: false };
+  }
+  
+  try {
+    const dateKey = date.toISOString().split('T')[0]; // YYYY-MM-DD format
+    const completionRef = doc(db, 'users', userId, 'habitCompletions', `${habitId}-${dateKey}`);
+    const completionDoc = await getDoc(completionRef);
+    
+    if (completionDoc.exists()) {
+      // Remove completion if it exists
+      await deleteDoc(completionRef);
+      return { success: true, completed: false };
+    } else {
+      // Add completion if it doesn't exist
+      await setDoc(completionRef, {
+        habitId,
+        date: date.toISOString(),
+        completedAt: serverTimestamp()
+      });
+      return { success: true, completed: true };
+    }
+  } catch (error) {
+    console.error('Error toggling habit completion:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Get habit completions for a date range
+ * @param {string} userId - The user's ID
+ * @param {Date} startDate - Start date of the range
+ * @param {Date} endDate - End date of the range
+ * @returns {Object} Map of completions by date and habit ID
+ */
+export async function getHabitCompletions(userId, startDate, endDate) {
+  if (!userId || !startDate || !endDate) return {};
+  
+  try {
+    const completionsRef = habitCompletionsCollection(userId);
+    const q = query(
+      completionsRef,
+      where('date', '>=', startDate.toISOString()),
+      where('date', '<=', endDate.toISOString())
+    );
+    
+    const completionsSnapshot = await getDocs(q);
+    
+    const completions = {};
+    completionsSnapshot.forEach(doc => {
+      const data = doc.data();
+      const dateKey = data.date.split('T')[0]; // Convert to YYYY-MM-DD format
+      
+      if (!completions[dateKey]) {
+        completions[dateKey] = {};
+      }
+      
+      completions[dateKey][data.habitId] = true;
+    });
+    
+    return completions;
+  } catch (error) {
+    console.error('Error getting habit completions:', error);
+    return {};
   }
 }

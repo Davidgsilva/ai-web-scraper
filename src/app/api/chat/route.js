@@ -14,7 +14,7 @@ export async function POST(req) {
     console.log('POST request received to /api/chat');
     
     // Get user ID from cookies
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const userId = cookieStore.get('userId')?.value;
     
     console.log('User ID from cookie:', userId);
@@ -87,40 +87,61 @@ export async function POST(req) {
       }
     }
     
-    // Create system prompt
-    const systemPrompt = `You are a helpful AI assistant that can help with various tasks including calendar management.
+    // Create system prompt with cache control
+    const staticSystemInstructions = {
+      type: "text",
+      text: `You are a helpful AI assistant that can help with various tasks including calendar management.
+      
+      When the user asks about calendar-related topics, you can:
+      1. Discuss calendar events - Provide information about their schedule
+      2. Summarize calendar - Provide a summary of upcoming events
+      3. Suggest scheduling - Help them find good times for new events
+      
+      For calendar events, include relevant details like:
+      - Title/summary of the event
+      - Date and time
+      - Location (if available)
+      - Description/details (if available)
+      
+      When summarizing calendar events:
+      - Group events by day
+      - Highlight important events
+      - Mention conflicts or busy periods
+      
+      For all other topics, be a helpful and informative assistant that provides accurate and thoughtful responses.
+      
+      Always respond in a friendly, conversational manner.`,
+      cache_control: { type: "ephemeral" }
+    };
     
-    ${isCalendarQuery ? `The user's Google Calendar events are:
-    ${calendarEvents.length > 0 ? JSON.stringify(calendarEvents, null, 2) : 'No calendar events available'}
+    // Prepare dynamic system content if calendar events exist
+    let systemContent = [staticSystemInstructions];
     
-    IMPORTANT: The app is connected to Google Calendar! When discussing calendar events, you have access to the user's actual Google Calendar data.` : ''}
+    if (isCalendarQuery && calendarEvents.length > 0) {
+      systemContent.push({
+        type: "text",
+        text: `The user's Google Calendar events are:
+        ${JSON.stringify(calendarEvents, null, 2)}
+        
+        IMPORTANT: The app is connected to Google Calendar! When discussing calendar events, you have access to the user's actual Google Calendar data.`
+      });
+    }
     
-    When the user asks about calendar-related topics, you can:
-    1. Discuss calendar events - Provide information about their schedule
-    2. Summarize calendar - Provide a summary of upcoming events
-    3. Suggest scheduling - Help them find good times for new events
-    
-    For calendar events, include relevant details like:
-    - Title/summary of the event
-    - Date and time
-    - Location (if available)
-    - Description/details (if available)
-    
-    When summarizing calendar events:
-    - Group events by day
-    - Highlight important events
-    - Mention conflicts or busy periods
-    
-    For all other topics, be a helpful and informative assistant that provides accurate and thoughtful responses.
-    
-    Always respond in a friendly, conversational manner.`;
-    
-    // Create a response using the existing Claude implementation
+    // Create a response using the Claude API with cache control
     const response = await anthropic.messages.create({
       model: "claude-3-7-sonnet-20250219",
       max_tokens: 1024,
-      system: systemPrompt,
-      messages: [{ role: "user", content: lastUserMessage.content }],
+      system: systemContent,
+      messages: [{ 
+        role: "user", 
+        content: lastUserMessage.content 
+      }],
+    });
+
+    console.log('Cache performance:', {
+      cache_creation_input_tokens: response.usage?.cache_creation_input_tokens || 0,
+      cache_read_input_tokens: response.usage?.cache_read_input_tokens || 0,
+      input_tokens: response.usage?.input_tokens || 0
     });
 
     // Return the response

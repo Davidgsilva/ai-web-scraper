@@ -2,15 +2,23 @@
 
 import * as React from "react"
 import { useState, useEffect } from "react"
-import { format, parseISO, isToday, isSameDay } from "date-fns"
+import { format, parseISO, isToday, isSameDay, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval } from "date-fns"
 import { useAuth } from "@/lib/authContext"
 import { Calendar } from "@/components/ui/calendar"
 import { cn } from "@/lib/utils"
+import { db } from "@/lib/firebase"
+import { Bar, BarChart, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
+import { getUserHabits, addHabit as addUserHabit, deleteHabit as deleteUserHabit, toggleHabitCompletion as toggleUserHabitCompletion, getHabitCompletions } from "@/lib/firebaseAuth"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
+import { TrendingUp, Plus, X, Check } from "lucide-react"
 
 // Import the required styles for react-day-picker
 import "react-day-picker/dist/style.css"
 
-// Cache for calendar events
+// Cache for calendar events only
 const eventCache = new Map();
 
 export function CalendarView() {
@@ -20,6 +28,13 @@ export function CalendarView() {
   const [isLoading, setIsLoading] = useState(false)
   const [selectedDayEvents, setSelectedDayEvents] = useState([])
   const [currentMonth, setCurrentMonth] = useState(new Date())
+  
+  // Habit tracking state
+  const [habits, setHabits] = useState([])
+  const [newHabitName, setNewHabitName] = useState('')
+  const [habitCompletions, setHabitCompletions] = useState({})
+  const [habitStats, setHabitStats] = useState([])
+  const [loadingHabits, setLoadingHabits] = useState(false)
 
   // Fetch calendar events
   useEffect(() => {
@@ -111,10 +126,178 @@ export function CalendarView() {
   
   // Update current month when date changes
   useEffect(() => {
-    if (isValidDate) {
-      setCurrentMonth(new Date(displayDate.getFullYear(), displayDate.getMonth(), 1));
+    if (date && !isNaN(date.getTime())) {
+      setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1));
     }
   }, [date]);
+  
+  // Fetch habits from Firebase
+  useEffect(() => {
+    const fetchHabits = async () => {
+      if (!user) return;
+      
+      setLoadingHabits(true);
+      
+      try {
+        // Use the new getUserHabits function
+        const habitsData = await getUserHabits(user.id);
+        setHabits(habitsData);
+        
+        // Fetch habit completions for the current month
+        await fetchHabitCompletionsForMonth(currentMonth);
+      } catch (error) {
+        console.error('Error fetching habits:', error);
+      } finally {
+        setLoadingHabits(false);
+      }
+    };
+    
+    fetchHabits();
+  }, [user, currentMonth]);
+  
+  // Fetch habit completions for the current month
+  const fetchHabitCompletionsForMonth = async (month) => {
+    if (!user || !habits.length) return;
+    
+    try {
+      const start = startOfMonth(month);
+      const end = endOfMonth(month);
+      
+      // Use the new getHabitCompletions function
+      console.log('Fetching habit completions from Firebase for', format(month, 'MMMM yyyy'));
+      const completions = await getHabitCompletions(user.id, start, end);
+      
+      setHabitCompletions(completions);
+      calculateHabitStats(completions);
+    } catch (error) {
+      console.error('Error fetching habit completions:', error);
+    }
+  };
+  
+  // Calculate habit statistics for the bar chart
+  const calculateHabitStats = (completions) => {
+    if (!habits.length) return;
+    
+    const days = eachDayOfInterval({
+      start: startOfMonth(currentMonth),
+      end: endOfMonth(currentMonth)
+    });
+    
+    const stats = habits.map(habit => {
+      let completed = 0;
+      
+      days.forEach(day => {
+        const dateKey = format(day, 'yyyy-MM-dd');
+        if (completions[dateKey] && completions[dateKey][habit.id]) {
+          completed++;
+        }
+      });
+      
+      return {
+        name: habit.name,
+        completed,
+        total: days.length,
+        percentage: Math.round((completed / days.length) * 100)
+      };
+    });
+    
+    setHabitStats(stats);
+  };
+  
+  // Add a new habit
+  const addHabit = async () => {
+    if (!user || !newHabitName.trim()) return;
+    
+    try {
+      // Use the new addUserHabit function
+      const newHabit = await addUserHabit(user.id, newHabitName.trim());
+      
+      if (newHabit) {
+        console.log('Successfully added habit to Firebase:', newHabit);
+        setHabits([...habits, newHabit]);
+        setNewHabitName('');
+        
+        // Refresh habit data
+        fetchHabitCompletionsForMonth(currentMonth);
+      }
+    } catch (error) {
+      console.error('Error adding habit:', error);
+    }
+  };
+  
+  // Delete a habit
+  const deleteHabit = async (habitId) => {
+    if (!user) return;
+    
+    try {
+      // Use the new deleteUserHabit function
+      const success = await deleteUserHabit(user.id, habitId);
+      
+      if (success) {
+        console.log('Successfully deleted habit from Firebase:', habitId);
+        setHabits(habits.filter(habit => habit.id !== habitId));
+        
+        // Refresh habit data
+        fetchHabitCompletionsForMonth(currentMonth);
+      }
+    } catch (error) {
+      console.error('Error deleting habit:', error);
+    }
+  };
+  
+  // Toggle habit completion for a specific day
+  const toggleHabitCompletion = async (habitId, date) => {
+    if (!user) return;
+    
+    const dateKey = format(date, 'yyyy-MM-dd');
+    const isCompleted = habitCompletions[dateKey] && habitCompletions[dateKey][habitId];
+    
+    try {
+      // Use the new toggleUserHabitCompletion function
+      const result = await toggleUserHabitCompletion(user.id, habitId, date);
+      
+      if (result.success) {
+        // Update local state based on the new completion status
+        const newCompletions = { ...habitCompletions };
+        
+        if (result.completed) {
+          // Add completion
+          if (!newCompletions[dateKey]) {
+            newCompletions[dateKey] = {};
+          }
+          newCompletions[dateKey][habitId] = true;
+        } else {
+          // Remove completion
+          if (newCompletions[dateKey]) {
+            delete newCompletions[dateKey][habitId];
+            if (Object.keys(newCompletions[dateKey]).length === 0) {
+              delete newCompletions[dateKey];
+            }
+          }
+        }
+        
+        setHabitCompletions(newCompletions);
+        calculateHabitStats(newCompletions);
+        
+        console.log('Successfully toggled habit completion in Firebase:', result.completed ? 'completed' : 'uncompleted');
+      }
+    } catch (error) {
+      console.error('Error toggling habit completion:', error);
+    }
+  };
+  
+  // Handle month navigation
+  const goToPreviousMonth = () => {
+    const newDate = subMonths(date, 1);
+    setDate(newDate);
+    setCurrentMonth(new Date(newDate.getFullYear(), newDate.getMonth(), 1));
+  };
+  
+  const goToNextMonth = () => {
+    const newDate = addMonths(date, 1);
+    setDate(newDate);
+    setCurrentMonth(new Date(newDate.getFullYear(), newDate.getMonth(), 1));
+  };
 
   // Custom day render function to show events
   const renderDay = (day) => {
@@ -206,134 +389,235 @@ export function CalendarView() {
     return days;
   };
 
-  // Ensure date is valid
-  const isValidDate = date && date instanceof Date && !isNaN(date.getTime());
-  const displayDate = isValidDate ? date : new Date();
-  
   return (
-    <div className="flex flex-col md:flex-row gap-6">
-      <div>
-        <div className="hidden md:block">
-          <Calendar
-            mode="single"
-            selected={displayDate}
-            onSelect={setDate}
-            className="rounded-md border shadow"
-          />
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col md:flex-row gap-6">
+        <div>
+          <div className="hidden md:block">
+            {/* Calendar component */}
+            <Calendar
+              mode="single"
+              selected={date}
+              onSelect={setDate}
+              className="rounded-md border"
+            />
+          </div>
         </div>
-      </div>
-      <div className="flex-1">
-        <div className="rounded-md border p-4">
-          <h2 className="font-semibold text-lg mb-4">
-            {isValidDate ? format(displayDate, "MMMM yyyy") : "Select a date"}
-            {isValidDate && isToday(displayDate) && <span className="ml-2 text-sm bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Today</span>}
-          </h2>
-          
-          {isLoading ? (
-            <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="flex-1">
+          <div className="rounded-md border p-4">
+            <div className="flex items-center justify-between mb-4">
+              <button
+                onClick={goToPreviousMonth}
+                className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                aria-label="Previous month"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-chevron-left">
+                  <path d="m15 18-6-6 6-6" />
+                </svg>
+              </button>
+              <h2 className="font-semibold text-lg flex items-center">
+                {format(date, 'MMMM yyyy')}
+                {isToday(date) && <span className="ml-2 text-sm bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Today</span>}
+              </h2>
+              <button
+                onClick={goToNextMonth}
+                className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                aria-label="Next month"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-chevron-right">
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </button>
             </div>
-          ) : (
-            <div className="grid grid-cols-7 gap-1">
-              {/* Day headers */}
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                <div key={day} className="text-center font-medium text-sm py-2">
-                  {day}
-                </div>
-              ))}
-              
-              {/* Calendar grid */}
-              {generateCalendarDays().map((day, index) => {
-                // Check if there are events on this day
-                const dayEvents = events.filter(event => {
-                  if (!event || !event.start) return false;
-                  const dateString = event.start.dateTime || event.start.date;
-                  if (!dateString) return false;
-                  
-                  try {
-                    const eventDate = parseISO(dateString);
-                    return day && isSameDay(eventDate, day);
-                  } catch (e) {
-                    return false;
-                  }
-                });
-                
-                const isSelected = day && isSameDay(day, displayDate);
-                const isCurrentMonth = day && day.getMonth() === currentMonth.getMonth();
-                const isCurrentDay = day && isToday(day);
-                
-                return (
-                  <div 
-                    key={index} 
-                    className={cn(
-                      "min-h-[80px] p-1 border rounded-md",
-                      !day && "bg-gray-50",
-                      day && !isCurrentMonth && "bg-gray-50 text-gray-400",
-                      isSelected && "bg-blue-50 border-blue-200",
-                      isCurrentDay && "border-blue-500"
-                    )}
-                    onClick={() => day && setDate(day)}
-                  >
+            {isLoading ? (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-7">
+                {/* Day headers */}
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                  <div key={day} className="text-center font-medium text-sm py-2">
+                    {day}
+                  </div>
+                ))}
+                {/* Calendar grid */}
+                {generateCalendarDays().map((day, index) => (
+                  <div key={index} className="min-h-[80px] p-1 border">
                     {day && (
                       <>
-                        <div className="text-right text-sm font-medium">
-                          {format(day, "d")}
+                        <div className="text-center text-sm font-medium">
+                          {format(day, 'd')}
                         </div>
                         <div className="mt-1">
-                          {dayEvents.slice(0, 3).map((event, idx) => (
-                            <div 
-                              key={event.id || idx} 
-                              className="text-xs truncate mb-1 p-1 rounded bg-blue-100 text-blue-800"
-                              title={event.summary}
-                            >
-                              {event.start.dateTime ? format(parseISO(event.start.dateTime), "h:mm") : ""} {event.summary || event.title}
-                            </div>
-                          ))}
-                          {dayEvents.length > 3 && (
-                            <div className="text-xs text-gray-500 pl-1">
-                              +{dayEvents.length - 3} more
-                            </div>
-                          )}
+                          {/* Events for the day */}
                         </div>
                       </>
                     )}
                   </div>
-                );
-              })}
-            </div>
-          )}
-          
-          {/* Selected day events */}
-          {selectedDayEvents.length > 0 && (
-            <div className="mt-6 border-t pt-4">
-              <h3 className="font-medium mb-3">
-                Events for {format(displayDate, "MMMM d, yyyy")}
-              </h3>
-              <div className="space-y-3">
-                {selectedDayEvents.map((event, index) => (
-                  <div key={event.id || index} className="p-3 rounded-md border bg-card">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="font-medium">{event.summary || event.title}</h3>
-                        {event.start.dateTime && (
-                          <p className="text-sm text-muted-foreground">
-                            {format(parseISO(event.start.dateTime), "h:mm a")} - {format(parseISO(event.end.dateTime), "h:mm a")}
-                          </p>
-                        )}
-                        {event.location && (
-                          <p className="text-sm text-muted-foreground mt-1">
-                            📍 {event.location}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+            {/* Selected day events */}
+            {selectedDayEvents.length > 0 && (
+              <div className="mt-6 border-t pt-4">
+                <h3 className="font-medium mb-3">
+                  Events for {format(date, 'MMMM d, yyyy')}
+                </h3>
+                <div className="space-y-3">
+                  {selectedDayEvents.map((event, index) => (
+                    <div key={event.id || index} className="p-3 rounded-md border bg-card">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="font-medium">{event.summary || event.title}</h3>
+                          {event.start.dateTime && (
+                            <p className="text-sm text-muted-foreground">
+                              {format(parseISO(event.start.dateTime), 'h:mm a')} -{' '}
+                              {format(parseISO(event.end.dateTime), 'h:mm a')}
+                            </p>
+                          )}
+                          {event.location && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              📍 {event.location}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      {/* Habit Tracking Section */}
+      <div className="flex flex-col md:flex-row gap-6">
+        {/* Habit List and Form */}
+        <div className="flex-1">
+          {/* Habit list and form component */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Habit Tracker</CardTitle>
+              <CardDescription>Track your daily habits</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingHabits ? (
+                <div className="flex justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+                </div>
+              ) : (
+                <>
+                  {/* Add Habit Form */}
+                  <div className="flex gap-2 mb-4">
+                    <Input
+                      placeholder="New habit name"
+                      value={newHabitName}
+                      onChange={(e) => setNewHabitName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && addHabit()}
+                    />
+                    <Button onClick={addHabit} size="sm">
+                      <Plus className="h-4 w-4 mr-1" /> Add
+                    </Button>
+                  </div>
+                  
+                  {/* Habits List */}
+                  <div className="space-y-3">
+                    {habits.length === 0 ? (
+                      <p className="text-muted-foreground text-center py-4">No habits yet. Add one to get started!</p>
+                    ) : (
+                      habits.map(habit => (
+                        <div key={habit.id} className="flex items-center justify-between p-3 border rounded-md">
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              id={`habit-${habit.id}`}
+                              checked={habitCompletions[format(date, 'yyyy-MM-dd')]?.[habit.id] || false}
+                              onCheckedChange={() => toggleHabitCompletion(habit.id, date)}
+                            />
+                            <label htmlFor={`habit-${habit.id}`} className="text-sm font-medium">
+                              {habit.name}
+                            </label>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteHabit(habit.id)}
+                            className="h-8 w-8 p-0"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+        
+        {/* Habit Stats Chart */}
+        <div className="flex-1">
+          <Card>
+            <CardHeader>
+              <CardTitle>Habit Progress</CardTitle>
+              <CardDescription>{format(currentMonth, 'MMMM yyyy')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {habitStats.length > 0 ? (
+                <div className="h-[300px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={habitStats}
+                      layout="vertical"
+                      margin={{ left: 20, right: 20, top: 20, bottom: 5 }}
+                    >
+                      <XAxis type="number" domain={[0, 100]} unit="%" />
+                      <YAxis
+                        dataKey="name"
+                        type="category"
+                        width={100}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <Tooltip
+                        formatter={(value, name) => [`${value}%`, 'Completion Rate']}
+                        labelFormatter={(value, entry) => {
+                          // Safe access to avoid undefined errors
+                          return entry && entry.payload && entry.payload[0] ? entry.payload[0].name : '';
+                        }}
+                      />
+                      <Bar
+                        dataKey="percentage"
+                        fill="var(--primary)"
+                        radius={[0, 4, 4, 0]}
+                        label={{ position: 'right', formatter: (value) => `${value}%` }}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-[300px] text-center">
+                  <p className="text-muted-foreground">Add habits to see your progress</p>
+                </div>
+              )}
+            </CardContent>
+            <CardFooter className="flex-col items-start gap-2 text-sm">
+              <div className="flex gap-2 font-medium leading-none">
+                {habitStats.length > 0 && (
+                  <>
+                    <Check className="h-4 w-4" />
+                    {Math.round(habitStats.reduce((acc, stat) => acc + stat.percentage, 0) / habitStats.length)}% average completion
+                  </>
+                )}
+              </div>
+              <div className="leading-none text-muted-foreground">
+                Showing habit progress for {format(currentMonth, 'MMMM yyyy')}
+              </div>
+            </CardFooter>
+          </Card>
         </div>
       </div>
     </div>
   )
-}
+  }

@@ -1,6 +1,21 @@
 import { google } from 'googleapis';
 import { saveUserSession, getUserSession } from '@/lib/firebaseAuth';
 
+// NextAuth.js compatibility for routes that expect it
+export const authOptions = {
+  providers: [],
+  callbacks: {
+    async session({ session }) {
+      return session;
+    },
+    async jwt({ token }) {
+      return token;
+    }
+  },
+  // This is a minimal implementation to make existing routes work
+  // The actual authentication is handled by our custom Google OAuth implementation
+};
+
 // Simple Google OAuth configuration without NextAuth
 export const googleOAuthConfig = {
   clientId: process.env.GOOGLE_CLIENT_ID,
@@ -68,6 +83,37 @@ export async function getUserInfo(accessToken) {
   }
 }
 
+// Refresh access token using refresh token
+export async function refreshAccessToken(refreshToken) {
+  try {
+    if (!refreshToken) {
+      throw new Error('No refresh token provided');
+    }
+    
+    console.log('Refreshing access token...');
+    const oauth2Client = createOAuth2Client();
+    
+    // Set the refresh token in the client
+    oauth2Client.setCredentials({
+      refresh_token: refreshToken
+    });
+    
+    // Get a new access token
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    
+    console.log('Token refreshed successfully');
+    
+    return {
+      accessToken: credentials.access_token,
+      accessTokenExpires: credentials.expiry_date || Date.now() + (credentials.expires_in * 1000),
+      refreshToken: credentials.refresh_token || refreshToken // Use new refresh token if provided
+    };
+  } catch (error) {
+    console.error('Error refreshing access token:', error);
+    throw error;
+  }
+}
+
 // Save user session to Firebase
 export async function saveUserSessionWithGoogle(tokens) {
   try {
@@ -85,7 +131,9 @@ export async function saveUserSessionWithGoogle(tokens) {
       image: userInfo.picture,
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
-      accessTokenExpires
+      accessTokenExpires,
+      lastLogin: new Date().toISOString(),
+      lastUpdated: new Date()
     };
     
     // Save to Firebase
